@@ -87,7 +87,7 @@ then
     # send an inspect execution with a nonce, expecting a report back
     CMD="echo 'ari:/EXECSET/n=12345;(//ietf/dtnma-agent/CTRL/report-on(/ac/(//ietf/dtnma-agent/EDD/sw-version)))' | \
         ace_ari --log-level=error --inform uri --outform cbor --must-nickname | \
-        curl ${CURLOPTS} -XPOST --expand-url ${URIBASE}/agents/eid/{{REFDA_EID:trim:url}}/send?form=cbor -H 'Content-Type: application/cbor-seq' --data-binary @-; echo"
+        curl ${CURLOPTS} -XPOST --expand-url ${URIBASE}/agents/eid/{{REFDA_EID:trim:url}}/send -H 'Content-Type: application/cbor-seq' --data-binary @- && echo"
     echo $CMD | ${CEXEC} bash
     echo
 

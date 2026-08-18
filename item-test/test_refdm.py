@@ -821,6 +821,7 @@ class TestRefdmSocket(BaseRefdm):
         send_ari = self._ari_text_to_obj(textform)
         send_data = self._ari_obj_to_cbor(send_ari)
 
+        # explicit form parameter
         resp = self._req.post(
             urllib.parse.urljoin(agent_base, "send?form=cbor"),
             data=send_data,
@@ -829,7 +830,18 @@ class TestRefdmSocket(BaseRefdm):
             },
         )
         self.assertTrue(resp.ok)
+        msg_vals = self._wait_msg(agent_ix=0)
+        self.assertEqual([send_ari], msg_vals)
 
+        # content-type negotiated
+        resp = self._req.post(
+            urllib.parse.urljoin(agent_base, "send"),
+            data=send_data,
+            headers={
+                "content-type": "application/cbor-seq",
+            },
+        )
+        self.assertTrue(resp.ok)
         msg_vals = self._wait_msg(agent_ix=0)
         self.assertEqual([send_ari], msg_vals)
 
@@ -857,6 +869,7 @@ class TestRefdmSocket(BaseRefdm):
         send_ari = self._ari_text_to_obj(textform)
         send_data = self._ari_obj_to_cbor(send_ari)
 
+        # explicit form parameter
         resp = self._req.post(
             urllib.parse.urljoin(agent_base, "send?form=cborhex"),
             data=f"{send_data.hex()}\r\n",
@@ -865,9 +878,18 @@ class TestRefdmSocket(BaseRefdm):
             },
         )
         self.assertTrue(resp.ok)
-
         msg_vals = self._wait_msg(agent_ix=0)
         self.assertEqual([send_ari], msg_vals)
+
+        # content-type not negotiated
+        resp = self._req.post(
+            urllib.parse.urljoin(agent_base, "send"),
+            data=f"{send_data.hex()}\r\n",
+            headers={
+                "content-type": "text/plain",
+            },
+        )
+        self.assertTrue(415, resp.status_code)
 
         # no other datagrams
         with self.assertRaises(TimeoutError):
@@ -893,6 +915,7 @@ class TestRefdmSocket(BaseRefdm):
         send_ari = self._ari_text_to_obj(textform)
         send_text = self._ari_obj_to_text(send_ari)
 
+        # explicit form parameter
         resp = self._req.post(
             urllib.parse.urljoin(agent_base, "send?form=uri"),
             data=f"{send_text}\r\n",
@@ -901,7 +924,18 @@ class TestRefdmSocket(BaseRefdm):
             },
         )
         self.assertTrue(resp.ok)
+        msg_vals = self._wait_msg(agent_ix=0)
+        self.assertEqual([send_ari], msg_vals)
 
+        # content-type negotiated
+        resp = self._req.post(
+            urllib.parse.urljoin(agent_base, "send"),
+            data=f"{send_text}\r\n",
+            headers={
+                "content-type": "text/uri-list",
+            },
+        )
+        self.assertTrue(resp.ok)
         msg_vals = self._wait_msg(agent_ix=0)
         self.assertEqual([send_ari], msg_vals)
 
@@ -1202,6 +1236,7 @@ class TestRefdmProxy(BaseRefdm):
         send_ari = self._ari_text_to_obj(textform)
         send_data = self._ari_obj_to_cbor(send_ari)
 
+        # explicit form parameter
         resp = self._req.post(
             urllib.parse.urljoin(agent_base, "send?form=cborhex"),
             data=f"{send_data.hex()}\r\n",
@@ -1210,7 +1245,6 @@ class TestRefdmProxy(BaseRefdm):
             },
         )
         self.assertTrue(resp.ok)
-
         msg_vals = self._wait_msg(agent_eid)
         self.assertEqual([send_ari], msg_vals)
 

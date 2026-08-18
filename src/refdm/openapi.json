@@ -167,7 +167,7 @@
             "name": "form",
             "in": "query",
             "required": false,
-            "description": "If not provided, the default form \"ari\" is used.",
+            "description": "If not provided, the content-type must be unambiguous (not text/plain)",
             "schema": {
               "$ref": "#/components/schemas/AriForm"
             }
@@ -372,7 +372,7 @@
         ]
       },
       "AriFormUri": {
-        "description": "Simplified URI syntax with  a fixed scheme and arbitrary SSP, separated by CRLF",
+        "description": "Simplified URI syntax with a fixed scheme and arbitrary SSP, separated by CRLF",
         "type": "string",
         "pattern": "^(ari:[\\x21-\\x7E]+\\r\\n)+$"
       },
