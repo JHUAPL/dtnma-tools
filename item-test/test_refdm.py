@@ -889,7 +889,7 @@ class TestRefdmSocket(BaseRefdm):
                 "content-type": "text/plain",
             },
         )
-        self.assertTrue(415, resp.status_code)
+        self.assertEqual(415, resp.status_code)
 
         # no other datagrams
         with self.assertRaises(TimeoutError):
