@@ -45,27 +45,26 @@
 #define AGENTS_IDX_PREFIX BASE_API_URI "/agents/idx/"
 #define AGENTS_EID_PREFIX BASE_API_URI "/agents/eid/"
 
-static int requireContentType(struct mg_connection *conn, const char *match)
+static bool isContentType(const char *ctype, const char *match)
 {
-    const char *ctype = mg_get_header(conn, "content-type");
     if (!ctype)
     {
-        return 2;
+        return false;
     }
     size_t ctype_len = strlen(ctype);
     size_t match_len = strlen(match);
     if (0 != strncasecmp(ctype, match, match_len))
     {
-        return 3;
+        return false;
     }
     if (ctype_len > match_len)
     {
         if (ctype[match_len] != ';')
         {
-            return 3;
+            return false;
         }
     }
-    return 0;
+    return true;
 }
 
 static int readRequstBody(struct mg_connection *conn, m_bstring_t data)
@@ -240,7 +239,8 @@ static bool isEidValid(const m_string_t eid)
 // This may be called via POST /agents
 static int agentsPostHandler(struct mg_connection *conn)
 {
-    if (requireContentType(conn, "text/plain"))
+    const char *ctype = mg_get_header(conn, "content-type");
+    if (!isContentType(ctype, "text/plain"))
     {
         mg_send_http_error(conn, HTTP_UNSUP_MEDIA_TYPE, "Only text/plain supported");
         return HTTP_UNSUP_MEDIA_TYPE;
@@ -880,7 +880,7 @@ static int agentAnySendHandler(struct mg_connection *conn, refdm_agent_t *agent)
 
     const struct mg_request_info *ri = mg_get_request_info(conn);
 
-    char form[10] = "uri"; // size enough to hold valid values
+    char form[10] = ""; // size enough to hold valid values
 
     int retval = getFormParam(conn, form, sizeof(form));
     if (retval)
@@ -899,10 +899,30 @@ static int agentAnySendHandler(struct mg_connection *conn, refdm_agent_t *agent)
     {
         cace_ari_list_t tosend;
         cace_ari_list_init(tosend);
+
+        const char *ctype = mg_get_header(conn, "content-type");
+        // Use content type when unambiguous
+        if (strlen(form) == 0)
+        {
+            if (isContentType(ctype, "text/uri-list"))
+            {
+                retval = agentParseText(conn, tosend);
+            }
+            else if (isContentType(ctype, "application/cbor-seq") || isContentType(ctype, "application/cbor"))
+            {
+                retval = agentParseCbor(conn, tosend);
+            }
+            else
+            {
+                mg_send_http_error(conn, HTTP_UNSUP_MEDIA_TYPE,
+                                   "Must supply a valid media type or use query parameter \"form\"");
+                retval = HTTP_UNSUP_MEDIA_TYPE;
+            }
+        }
         if ((strcasecmp(form, "uri") == 0) || (strcasecmp(form, "text") == 0))
         {
             // either is acceptable
-            if (requireContentType(conn, "text/uri-list") && requireContentType(conn, "text/plain"))
+            if (!(isContentType(ctype, "text/uri-list") || isContentType(ctype, "text/plain")))
             {
                 mg_send_http_error(conn, HTTP_UNSUP_MEDIA_TYPE, "Only text/uri-list or text/plain supported");
                 retval = HTTP_UNSUP_MEDIA_TYPE;
@@ -914,7 +934,7 @@ static int agentAnySendHandler(struct mg_connection *conn, refdm_agent_t *agent)
         }
         else if (strcasecmp(form, "cbor") == 0)
         {
-            if (requireContentType(conn, "application/cbor-seq") && requireContentType(conn, "application/cbor"))
+            if (!(isContentType(ctype, "application/cbor-seq") || isContentType(ctype, "application/cbor")))
             {
                 mg_send_http_error(conn, HTTP_UNSUP_MEDIA_TYPE,
                                    "Only application/cbor-seq or application/cbor supported");
@@ -927,7 +947,7 @@ static int agentAnySendHandler(struct mg_connection *conn, refdm_agent_t *agent)
         }
         else if ((strcasecmp(form, "cborhex") == 0) || (strcasecmp(form, "hex") == 0))
         {
-            if (requireContentType(conn, "text/plain"))
+            if (!isContentType(ctype, "text/plain"))
             {
                 mg_send_http_error(conn, HTTP_UNSUP_MEDIA_TYPE, "Only text/plain supported");
                 retval = HTTP_UNSUP_MEDIA_TYPE;
