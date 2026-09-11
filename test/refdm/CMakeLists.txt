@@ -15,21 +15,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ]]
-set(UNITY_ROOT "${CMAKE_SOURCE_DIR}/deps/unity")
-find_package(unitytools)
 
-include_directories(
-  BEFORE
-  ${CMAKE_BINARY_DIR}/src
-  ${CMAKE_SOURCE_DIR}/src
-  ${CMAKE_SOURCE_DIR}/test
-)
+if(BUILD_UNITTEST AND NOT BUILD_FUZZING)
+    if(civetweb_FOUND)
+        add_unity_test(SOURCE "test_nm_rest.c")
+        target_link_libraries(test_nm_rest PUBLIC refdm)
+    endif(civetweb_FOUND)
 
-add_subdirectory(util)
-add_subdirectory(cace)
-if(BUILD_AGENT)
-  add_subdirectory(refda)
-endif(BUILD_AGENT)
-if(BUILD_MANAGER)
-  add_subdirectory(refdm)
-endif(BUILD_MANAGER)
+    # Test just being able to compile and link a C++ user with the refdm library
+    add_executable(test_refdm_cpp)
+    target_sources(test_refdm_cpp PRIVATE test_refdm_cpp.cpp)
+    target_link_libraries(test_refdm_cpp PUBLIC refdm)
+    add_test(NAME test_refdm_cpp COMMAND test_refdm_cpp)
+    set_tests_properties(test_refdm_cpp PROPERTIES TIMEOUT 30)
+endif(BUILD_UNITTEST AND NOT BUILD_FUZZING)

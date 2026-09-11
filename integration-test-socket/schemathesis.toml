@@ -1,0 +1,38 @@
+# module file in same directory as this config
+hooks = "serializers.py"
+
+[phases.coverage]
+enabled = true
+# Only test these as unsupported method
+#unexpected-methods = ["OPTIONS", "PUT", "POST", "DELETE", "PATCH"]
+# work around 404 vs 405 bug
+unexpected-methods = []
+
+[phases.fuzzing]
+enabled = true
+
+[phases.stateful]
+enabled = true
+max-steps = 4
+
+[generation]
+codec = "ascii"
+max-examples = 10
+
+[checks]
+positive_data_acceptance.expected-statuses = [
+    "200", "201", "202", "204",
+    "400", # ARI content is just bad
+    "404", # no such EID
+    "415", # mismatch between query and content-type
+    "422", # invalid body due to fuzzing limitations
+    "504" # failure to send
+]
+negative_data_rejection.expected-statuses = [
+    "400", "401", "403", "404", "405", "406", "409", "415", "422", "428",
+    "504" # failure to send
+]
+not_a_server_error.expected-statuses = [
+    "2xx", "3xx", "4xx",
+    "504" # failure to send
+]

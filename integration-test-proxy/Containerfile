@@ -15,7 +15,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 ##
-FROM ubuntu:24.04 AS systemd-base
+FROM docker.io/library/ubuntu:24.04 AS os-base
 ENV DEBIAN_FRONTEND="noninteractive"
 
 # APL network configuration from
@@ -27,11 +27,24 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
     update-ca-certificates
 ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 ENV PIP_DEFAULT_TIMEOUT=300
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Distro upgrade for security patches
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get upgrade -y
+    apt-get update && apt-get upgrade -y && \
+    rm -f /var/lib/man-db/auto-update
+
+# Testing utilities
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    net-tools iproute2 iputils-ping \
+    lsof iftop gdb valgrind xxd socat jq ruby && \
+    gem install cbor-diag
+
+
+FROM os-base AS systemd-base
 
 # Use systemd as top-level process
 RUN --mount=type=cache,target=/var/lib/apt/lists \
@@ -46,16 +59,10 @@ RUN systemctl mask systemd-logind && \
     echo "MulticastDNS=no" >>/etc/systemd/resolved.conf
 CMD [ "/sbin/init" ]
 
-# Testing utilities
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y \
-    net-tools iproute2 iputils-ping \
-    lsof iftop gdb valgrind xxd socat jq ruby && \
-    gem install cbor-diag
+COPY --chmod=755 systemd/service_is_running.sh /usr/local/bin/service_is_running
 
 
-FROM ubuntu:24.04 AS deps-local
+FROM ubuntu:24.04 AS build-local
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -103,31 +110,12 @@ RUN cd /usr/local/src/nm/deps/timespec && \
     ldconfig && \
     rm -rf build
 
-
-FROM systemd-base AS testenv
-COPY --from=deps-local /usr/local /usr/local
-
-# Helper utilities
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y \
-    python3 python3-pip
-COPY --chmod=755 systemd/service_is_running.sh /usr/local/bin/service_is_running
-
-# Test tools
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y \
-    curl git tshark postgresql-client
-RUN pip3 install --break-system-packages git+https://github.com/JHUAPL-DTNMA/dtnma-ace.git@main
-RUN git clone --branch main https://github.com/JHUAPL-DTNMA/dtnma-adms.git /usr/local/share/ace/adms
-
 # REFDA and REFDM to test
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y \
     cmake ninja-build ruby pkg-config \
-    flex libfl-dev bison libpcre2-dev libpq-dev civetweb libcivetweb-dev libssl-dev libcjson-dev libsystemd-dev
+    flex libfl-dev bison libpcre2-dev libpq-dev civetweb libcivetweb-dev libcjson-dev libsystemd-dev
 COPY cmake /usr/local/src/nm/cmake
 COPY src /usr/local/src/nm/src
 COPY CMakeLists.txt /usr/local/src/nm/
@@ -143,46 +131,99 @@ RUN cd /usr/local/src/nm && \
       -G Ninja && \
     cmake --build build/default && \
     cmake --install build/default && \
-    ldconfig
-# keep build artifacts for debuginfo
+    ldconfig && \
+    rm -rf build
 
 
-FROM testenv AS amp-manager
+FROM os-base AS client
 
-# Systemd services
-COPY --chmod=644 systemd/refdm-proxy.service \
-    /usr/local/lib/systemd/system/
-RUN systemctl enable refdm-proxy
+# Helper utilities
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    curl git \
+    python3 python3-pip python3-wheel
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install schemathesis
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install git+https://github.com/JHUAPL-DTNMA/dtnma-ace.git@main
+RUN git clone --branch main https://github.com/JHUAPL-DTNMA/dtnma-adms.git /usr/local/share/ace/adms
+
+# test config
+COPY integration-test-socket/schemathesis.toml integration-test-socket/serializers.py /root/
+
+WORKDIR "/root"
+CMD ["sh", "-c", "trap \"exit\" TERM; while true; do sleep 1; done"]
+
+
+FROM os-base AS amp-manager
+
+# Test tools
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    curl postgresql-client
+
+# REFDM
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    libcivetweb1 libcjson1
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
+CMD ["sh", "-c", "refdm-proxy -l ${DTNMA_LOGLEVEL} -a ${AMP_PROXY_SOCKET} -t 30"]
 
 EXPOSE 8089/tcp
 
 
-FROM testenv AS ion-manager
+FROM systemd-base AS ion-manager
+
+# ION files
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
 
 # Systemd services
 COPY integration-test-ion/tmpfiles.conf /etc/tmpfiles.d/ion.conf
-COPY --chmod=644 systemd/ion.service systemd/ion-app-proxy.service systemd/bpecho@.service systemd/dumpcap.service \
+COPY --chmod=644 systemd/ion.service systemd/ion-app-proxy.service systemd/bpecho@.service \
     /usr/local/lib/systemd/system/
-RUN systemctl enable ion bpecho@4 ion-app-proxy dumpcap && \
+RUN systemctl enable ion bpecho@4 ion-app-proxy && \
     mkdir -p /var/run/ion
 
 # Runtime config for this container
 COPY integration-test-ion/node-*.rc /etc/ion/
 
+HEALTHCHECK --start-period=10s --interval=10s --timeout=5s --retries=5 \
+    CMD ["service_is_running", "ion", "ion-app-proxy"]
 EXPOSE 4556/udp
 
 
-FROM testenv AS agent
+FROM systemd-base AS ion-agent
+
+# ION files
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
 
 # Systemd services
 COPY integration-test-ion/tmpfiles.conf /etc/tmpfiles.d/ion.conf
-COPY --chmod=644 systemd/ion.service systemd/refda-ion.service systemd/bpecho@.service systemd/dumpcap.service \
+COPY --chmod=644 systemd/ion.service systemd/bpecho@.service \
     /usr/local/lib/systemd/system/
-RUN systemctl enable ion bpecho@4 refda-ion dumpcap && \
+RUN systemctl enable ion bpecho@4 && \
     mkdir -p /var/run/ion
+
+# Runtime config for this container
+COPY integration-test-ion/node-*.rc /etc/ion/
+
+HEALTHCHECK --start-period=10s --interval=10s --timeout=5s --retries=5 \
+    CMD ["service_is_running", "ion"]
+EXPOSE 4556/udp
+
+
+FROM os-base AS amp-agent
+
+# REFDA
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
+CMD ["sh", "-c", "refda-ion -l ${DTNMA_LOGLEVEL} -s /etc/refda/startup.uri -a ipn:${ION_NODE_NUM}.6 -m ipn:${MGR_NODE_NUM}.7"]
 
 # Runtime config for this container
 COPY integration-test-ion/startup.uri /etc/refda/startup.uri
-COPY integration-test-ion/node-*.rc /etc/ion/
-
-EXPOSE 4556/udp

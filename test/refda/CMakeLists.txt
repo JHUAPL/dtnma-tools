@@ -44,5 +44,7 @@ if(BUILD_UNITTEST AND NOT BUILD_FUZZING)
   # Test just being able to compile and link a C++ user with the refda library
   add_executable(test_refda_cpp)
   target_sources(test_refda_cpp PRIVATE test_refda_cpp.cpp)
-  target_link_libraries(test_refda_cpp PUBLIC refda)
+  target_link_libraries(test_refda_cpp PUBLIC refda test_util)
+  add_test(NAME test_refda_cpp COMMAND test_refda_cpp)
+  set_tests_properties(test_refda_cpp PROPERTIES TIMEOUT 30)
 endif(BUILD_UNITTEST AND NOT BUILD_FUZZING)

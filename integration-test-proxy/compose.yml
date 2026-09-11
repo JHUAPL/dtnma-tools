@@ -34,13 +34,25 @@ services:
       context: ../refdb-sql
       dockerfile: Containerfile
     hostname: postgres
-    restart: no
+    restart: "no"
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - "postgres-data:/var/lib/postgresql/data"
+
+  client:
+    hostname: client
+    build:
+      context: ..
+      dockerfile: integration-test-socket/Containerfile
+      target: client
+    depends_on:
+      amp-manager:
+        condition: service_started
+    environment:
+      DTNMA_LOGLEVEL: debug
 
   amp-manager:
     hostname: amp-manager
@@ -55,16 +67,9 @@ services:
         condition: service_healthy
       ion-manager:
         condition: service_started
-    privileged: true
-    tty: true
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-      - SYS_NICE
     volumes:
       - "sockdir:${SOCKDIR}"
     environment:
-      container: docker
       DTNMA_LOGLEVEL: debug
       AMP_PROXY_SOCKET: "${SOCKDIR}/proxy.sock"
       DB_HOST: postgres
@@ -86,7 +91,6 @@ services:
       - NET_RAW
       - SYS_NICE
     volumes:
-      - "/var/tmp/pcap:/var/log/pcap"
       - "sockdir:${SOCKDIR}"
     environment:
       container: docker
@@ -94,20 +98,19 @@ services:
       AMP_PROXY_SOCKET: "${SOCKDIR}/proxy.sock"
       ION_NODE_NUM: 1
       MGR_NODE_NUM: 1
-      DUMPCAP_OUTFILE: /var/log/pcap/manager.pcap
-      DUMPCAP_OPTS: -i lo -i eth0
     networks:
       default:
         ipv4_address: 10.5.0.101
 
-  agent1:
-    hostname: agent1
+  ion-agent1:
+    hostname: ion-agent1
     build:
       context: ..
       dockerfile: integration-test-proxy/Containerfile
-      target: agent
+      target: ion-agent
     depends_on:
       ion-manager:
+        # for startup messaging
         condition: service_started
     privileged: true
     tty: true
@@ -115,15 +118,27 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_NICE
-    volumes:
-      - "/var/tmp/pcap:/var/log/pcap"
     environment:
       container: docker
       DTNMA_LOGLEVEL: debug
       ION_NODE_NUM: 2
       MGR_NODE_NUM: 1
-      DUMPCAP_OUTFILE: /var/log/pcap/agent1.pcap
-      DUMPCAP_OPTS: -i lo -i eth0
     networks:
       default:
         ipv4_address: 10.5.0.102
+    ipc: shareable
+
+  amp-agent1:
+    hostname: amp-agent1
+    build:
+      context: ..
+      dockerfile: integration-test-proxy/Containerfile
+      target: amp-agent
+    depends_on:
+      ion-agent1:
+        condition: service_healthy
+    environment:
+      DTNMA_LOGLEVEL: debug
+      ION_NODE_NUM: 2
+      MGR_NODE_NUM: 1
+    ipc: "service:ion-agent1"

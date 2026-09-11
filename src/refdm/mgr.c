@@ -90,7 +90,9 @@ void refdm_mgr_init(refdm_mgr_t *mgr)
 
 #if CIVETWEB_FOUND
     mgr->rest_listen_port = 8089;
-    mgr->rest             = NULL;
+    m_string_init(mgr->docroot_path);
+    refdm_nm_rest_get_docroot(mgr->docroot_path);
+    mgr->rest = NULL;
 #endif // CIVETWEB_FOUND
 #if POSTGRESQL_FOUND
 
@@ -122,6 +124,9 @@ void refdm_mgr_deinit(refdm_mgr_t *mgr)
     free(mgr->sql_info.database);
     pthread_mutex_destroy(&(mgr->sql_lock));
 #endif // POSTGRESQL_FOUND
+#if CIVETWEB_FOUND
+    m_string_clear(mgr->docroot_path);
+#endif // CIVETWEB_FOUND
 
     pthread_mutex_destroy(&(mgr->agent_mutex));
     refdm_agent_dict_clear(mgr->agent_dict);
@@ -143,7 +148,6 @@ int refdm_mgr_start(refdm_mgr_t *mgr)
 {
     cace_threadinfo_t threadinfo[3] = {
         { &refdm_ingress_worker, "refdm_ingress" },
-        //        { &ui_thread, "nm_mgr_ui" },
         { NULL, NULL },
     };
 

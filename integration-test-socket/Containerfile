@@ -15,7 +15,7 @@
 ## See the License for the specific language governing permissions and
 ## limitations under the License.
 ##
-FROM ubuntu:24.04 AS systemd-base
+FROM docker.io/library/ubuntu:24.04 AS os-base
 ENV DEBIAN_FRONTEND="noninteractive"
 
 # APL network configuration from
@@ -27,24 +27,13 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
     update-ca-certificates
 ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt
 ENV PIP_DEFAULT_TIMEOUT=300
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # Distro upgrade for security patches
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get upgrade -y
-
-# Use systemd as top-level process
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y systemd systemd-sysv
-RUN systemctl mask systemd-logind && \
-    systemctl mask console-getty && \
-    systemctl disable getty@tty1 && \
-    systemctl disable apt-daily.timer apt-daily-upgrade.timer && \
-    systemctl disable systemd-timesyncd && \
-    systemctl disable systemd-networkd && \
-    echo "MulticastDNS=no" >>/etc/systemd/resolved.conf
-CMD [ "/sbin/init" ]
+    apt-get update && apt-get upgrade -y && \
+    rm -f /var/lib/man-db/auto-update
 
 # Testing utilities
 RUN --mount=type=cache,target=/var/lib/apt/lists \
@@ -55,7 +44,7 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
     gem install cbor-diag
 
 
-FROM ubuntu:24.04 AS deps-local
+FROM ubuntu:24.04 AS build-local
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -91,31 +80,12 @@ RUN cd /usr/local/src/nm/deps/timespec && \
     ldconfig && \
     rm -rf build
 
-
-FROM systemd-base AS testenv
-COPY --from=deps-local /usr/local /usr/local
-
-# Helper utilities
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y \
-    python3 python3-pip
-COPY --chmod=755 systemd/service_is_running.sh /usr/local/bin/service_is_running
-
-# Test tools
-RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && apt-get install -y \
-    curl git tshark postgresql-client
-RUN pip3 install --break-system-packages git+https://github.com/JHUAPL-DTNMA/dtnma-ace.git@main
-RUN git clone --branch main https://github.com/JHUAPL-DTNMA/dtnma-adms.git /usr/local/share/ace/adms
-
 # REFDA and REFDM to test
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y \
     cmake ninja-build ruby pkg-config \
-    flex libfl-dev bison libpcre2-dev libpq-dev civetweb libcivetweb-dev libssl-dev libcjson-dev libsystemd-dev
+    flex libfl-dev bison libpcre2-dev libpq-dev civetweb libcivetweb-dev libcjson-dev
 COPY cmake /usr/local/src/nm/cmake
 COPY src /usr/local/src/nm/src
 COPY CMakeLists.txt /usr/local/src/nm/
@@ -131,25 +101,57 @@ RUN cd /usr/local/src/nm && \
       -G Ninja && \
     cmake --build build/default && \
     cmake --install build/default && \
-    ldconfig
-# keep build artifacts for debuginfo
+    ldconfig && \
+    rm -rf build
 
 
-FROM testenv AS manager
+FROM os-base AS client
 
-COPY --chmod=644 systemd/refdm-socket.service \
-    /usr/local/lib/systemd/system/
-RUN systemctl enable refdm-socket
+# Helper utilities
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    curl git \
+    python3 python3-pip python3-wheel
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install schemathesis
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install git+https://github.com/JHUAPL-DTNMA/dtnma-ace.git@main
+RUN git clone --branch main https://github.com/JHUAPL-DTNMA/dtnma-adms.git /usr/local/share/ace/adms
+
+# test config
+COPY integration-test-socket/schemathesis.toml integration-test-socket/serializers.py /root/
+
+WORKDIR "/root"
+CMD ["sh", "-c", "trap \"exit\" TERM; while true; do sleep 1; done"]
+
+
+FROM os-base AS manager
+
+# Test tools
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    curl postgresql-client
+
+# REFDM
+RUN --mount=type=cache,target=/var/lib/apt/lists \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    libcivetweb1 libcjson1
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
+CMD ["sh", "-c", "refdm-socket -l ${DTNMA_LOGLEVEL} -a file:${REFDM_SOCKET}"]
 
 EXPOSE 8089/tcp
 
 
-FROM testenv AS agent
-
-# Systemd services
-COPY --chmod=644 systemd/refda-socket.service \
-    /usr/local/lib/systemd/system/
-RUN systemctl enable refda-socket
+FROM os-base AS agent
 
 # Runtime config for this container
 COPY integration-test-socket/startup.uri /etc/refda/startup.uri
+
+# REFDA
+COPY --from=build-local /usr/local /usr/local
+RUN ldconfig
+CMD ["sh", "-c", "refda-socket -l ${DTNMA_LOGLEVEL} -s /etc/refda/startup.uri -a file:${REFDA_SOCKET} -m file:${REFDM_SOCKET}"]

@@ -158,11 +158,16 @@ int cace_amp_socket_send(const cace_ari_list_t data, const cace_amm_msg_if_metad
         return 6;
     }
 
-    dest_eid = cace_amp_socket_strip_scheme(dest_eid);
+    const char *dest_path = cace_amp_socket_strip_scheme(dest_eid);
+    if (!dest_path)
+    {
+        CACE_LOG_ERR("given dest which is not a socket path %s", dest_eid);
+        return 6;
+    }
 
     struct sockaddr_un daddr;
     daddr.sun_family = AF_UNIX;
-    char *sun_end    = stpncpy(daddr.sun_path, dest_eid, sizeof(daddr.sun_path));
+    char *sun_end    = stpncpy(daddr.sun_path, dest_path, sizeof(daddr.sun_path));
     if (sun_end - daddr.sun_path >= (ssize_t)sizeof(daddr.sun_path))
     {
         CACE_LOG_ERR("given dest that is too long to fit in sockaddr_un");

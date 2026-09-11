@@ -127,6 +127,10 @@ typedef struct refdm_mgr_s
 #if CIVETWEB_FOUND
     /// The port number to listen on
     uint16_t rest_listen_port;
+    /** Static file source path.
+     * @sa refdm_nm_rest_get_docroot()
+     */
+    m_string_t docroot_path;
     /// HTTP server state, managed by a background thread
     struct mg_context *rest;
 #endif

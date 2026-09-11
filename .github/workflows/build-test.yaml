@@ -241,9 +241,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        transport: ['ion', 'proxy']
+        transport: ['socket', 'ion', 'proxy']
     name: Integration Test (${{matrix.transport}})
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: "integration-test-${{matrix.transport}}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -253,12 +256,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Start
-        run: ./integration-test-${{matrix.transport}}/run.sh start
+        run: ./run.sh start
       - name: Test
-        run: ./integration-test-${{matrix.transport}}/run.sh check
+        run: ./run.sh check
       - name: Logs
-        if: always()
-        run: ./integration-test-${{matrix.transport}}/run.sh logs
+        if: failure()
+        run: ./run.sh logs
       - name: Stop
         if: always()
-        run: ./integration-test-${{matrix.transport}}/run.sh stop
+        run: ./run.sh stop

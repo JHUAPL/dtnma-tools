@@ -27,7 +27,7 @@ services:
       context: ../refdb-sql
       dockerfile: Containerfile
     hostname: postgres
-    restart: no
+    restart: "no"
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -35,7 +35,21 @@ services:
     volumes:
       - "postgres-data:/var/lib/postgresql/data"
 
-  manager:
+  client:
+    hostname: client
+    build:
+      context: ..
+      dockerfile: integration-test-socket/Containerfile
+      target: client
+    depends_on:
+      amp-manager:
+        condition: service_started
+    environment:
+      DTNMA_LOGLEVEL: debug
+      REFDA_EID: "file:${SOCKDIR}/refda.sock"
+
+  amp-manager:
+    hostname: amp-manager
     build:
       context: ..
       dockerfile: integration-test-socket/Containerfile
@@ -45,16 +59,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    privileged: true
-    tty: true
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-      - SYS_NICE
     environment:
-      container: docker
       DTNMA_LOGLEVEL: debug
-      REFDA_EID: "file:${SOCKDIR}/refda.sock"
       REFDA_SOCKET: "${SOCKDIR}/refda.sock"
       REFDM_SOCKET: "${SOCKDIR}/refdm.sock"
       DB_HOST: postgres
@@ -64,19 +70,14 @@ services:
     volumes:
       - "sockdir:${SOCKDIR}"
 
-  agent:
+  amp-agent1:
+    hostname: amp-agent1
     build:
       context: ..
       dockerfile: integration-test-socket/Containerfile
       target: agent
-    privileged: true
-    tty: true
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-      - SYS_NICE
+    depends_on: {}
     environment:
-      container: docker
       DTNMA_LOGLEVEL: debug
       REFDA_SOCKET: "${SOCKDIR}/refda.sock"
       REFDM_SOCKET: "${SOCKDIR}/refdm.sock"

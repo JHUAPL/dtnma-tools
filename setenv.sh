@@ -32,5 +32,6 @@ then
         LD_LIBRARY_PATH=${DESTDIR}${PREFIX}/lib:${DESTDIR}${PREFIX}/lib64
     fi
     export LD_LIBRARY_PATH
-    export PATH=${PATH}:${DESTDIR}${PREFIX}/bin
+    export PATH=${DESTDIR}${PREFIX}/bin:${PATH}
+    export XDG_DATA_DIRS=${DESTDIR}${PREFIX}/share:${XDG_DATA_DIRS}
 fi

@@ -15,24 +15,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /** @file
  * This just verifies the ability for a C++11 executable to link with the
- * refda library.
+ * refdm library.
  */
-#include "util/agent.h"
-#include <refda/agent.h>
-#include <refda/adm/ietf_amm.h>
-#include <refda/adm/ietf_amm_base.h>
-#include <refda/adm/ietf_amm_semtype.h>
-#include <refda/adm/ietf_network_base.h>
-#include <refda/adm/ietf_dtnma_agent.h>
+#include <refdm/mgr.h>
 #include <cace/util/logging.h>
 #include <cace/util/defs.h>
 #include <iostream>
 
 /// Per-process state
-static refda_agent_t agent;
+static refdm_mgr_t mgr;
 
 static int dummy_send(const cace_ari_list_t data, const cace_amm_msg_if_metadata_t *meta, const struct timespec *timeout _U_, void *ctx _U_)
 {
@@ -57,87 +50,57 @@ int main(int argc _U_, char *argv[] _U_)
     int retval = 0;
 
     cace_openlog();
-    refda_agent_init(&agent);
+    refdm_mgr_init(&mgr);
 
     int log_limit = LOG_INFO;
     cace_log_set_least_severity(log_limit);
-    CACE_LOG_DEBUG("Agent starting up with log limit %d", log_limit);
+    CACE_LOG_DEBUG("Manager starting up with log limit %d", log_limit);
 
-    agent.mif.send = dummy_send;
-    agent.mif.recv = dummy_recv;
+    mgr.mif.send = dummy_send;
+    mgr.mif.recv = dummy_recv;
 
-    // ADM initialization
-    test_util_agent_crit_adms(&agent);
-
-    /* Start agent threads. */
+    /* Start daemon threads. */
     if (!retval)
     {
-        int failures = refda_agent_bindrefs(&agent);
-        if (failures)
+        if (refdm_mgr_start(&mgr))
         {
-            // Warn but continue on
-            CACE_LOG_ERR("ADM reference binding failed for %d type references", failures);
+            CACE_LOG_ERR("Manager startup failed");
             retval = 2;
         }
         else
         {
-            CACE_LOG_INFO("ADM reference binding succeeded");
-        }
-    }
-    if (!retval)
-    {
-        if (refda_agent_init_objs(&agent))
-        {
-            CACE_LOG_ERR("Agent object initialization failed");
-            retval = 2;
-        }
-        else
-        {
-            CACE_LOG_INFO("Agent object initialization completed");
-        }
-    }
-    if (!retval)
-    {
-        if (refda_agent_start(&agent))
-        {
-            CACE_LOG_ERR("Agent startup failed");
-            retval = 2;
-        }
-        else
-        {
-            CACE_LOG_INFO("Agent startup completed");
+            CACE_LOG_INFO("Manager startup completed");
         }
     }
 
     CACE_LOG_INFO("READY");
-    refda_agent_enable_exec(&agent);
 
-    if (!retval)
+    if (!retval && false)
     {
         // Block until stopped
-        cace_daemon_run_wait(&agent.running);
-        CACE_LOG_INFO("Agent is shutting down");
+        cace_daemon_run_wait(&mgr.running);
+        CACE_LOG_INFO("Manager is shutting down");
     }
 
     /* Join threads and wait for them to complete. */
     if (!retval)
     {
-        if (refda_agent_stop(&agent))
+        if (refdm_mgr_stop(&mgr))
         {
-            CACE_LOG_ERR("Agent stop failed");
+            CACE_LOG_ERR("Manager stop failed");
             retval = 4;
         }
         else
         {
-            CACE_LOG_INFO("Agent stopped");
+            CACE_LOG_INFO("Manager stopped");
         }
     }
 
     /* Cleanup. */
     CACE_LOG_DEBUG("Cleaning Agent Resources");
-    refda_agent_deinit(&agent);
+    refdm_mgr_deinit(&mgr);
 
-    CACE_LOG_DEBUG("Agent shutdown completed");
+    CACE_LOG_DEBUG("Manager shutdown completed");
     cace_closelog();
     return retval;
 }

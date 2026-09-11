@@ -110,7 +110,7 @@ static int cace_ari_cbor_decode_idseg(QCBORDecodeContext *dec, cace_ari_idseg_t 
             UsefulBufC buf;
             QCBORDecode_GetTextString(dec, &buf);
             // add trailing null
-            m_string_init_printf(obj->as_text, "%.*s", buf.len, buf.ptr);
+            m_string_init_printf(obj->as_text, "%.*s", (int)buf.len, buf.ptr);
             break;
         }
         case QCBOR_TYPE_INT64:
@@ -978,7 +978,7 @@ static int cace_ari_cbor_decode_objpat_part(QCBORDecodeContext *dec, cace_ari_ob
             QCBORDecode_GetTextString(dec, &buf);
             m_string_t text;
             // add trailing null
-            m_string_init_printf(text, "%.*s", buf.len, buf.ptr);
+            m_string_init_printf(text, "%.*s", (int)buf.len, buf.ptr);
             cace_ari_objpat_part_move_text(*obj, text);
             break;
         }

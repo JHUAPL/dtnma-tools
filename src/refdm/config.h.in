@@ -34,8 +34,6 @@ extern "C" {
 
 /** Use the civetweb HTTP server library. */
 #cmakedefine01 CIVETWEB_FOUND
-/** Never configure with SSL/TLS */
-#define CIVETWEB_USE_SSL 0
 
 /** Use cJSON for encoding. */
 #cmakedefine01 cJSON_FOUND

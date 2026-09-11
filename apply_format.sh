@@ -33,6 +33,16 @@ else
 fi
 clang-format --style=file -i $ARGS
 
+if which jq >/dev/null 2>/dev/null
+then
+    OPENAPI="src/refdm/openapi.json"
+    if jq . <${OPENAPI} >"${OPENAPI}.new"
+    then
+        mv "${OPENAPI}.new" "${OPENAPI}"
+    else
+        rm "${OPENAPI}.new"
+    fi
+fi
 
 # Python test fixtures
 pushd item-test/
